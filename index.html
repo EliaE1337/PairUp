@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PairUp — מצא קבוצה</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;900&family=Orbitron:wght@700;900&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            heebo:    ["Heebo", "sans-serif"],
+            orbitron: ["Orbitron", "sans-serif"],
+          },
+          colors: {
+            void:   "#07080d",
+            panel:  "#0e1018",
+            cyan:   { DEFAULT:"#00e5ff", dim:"#00b8cc" },
+            violet: { DEFAULT:"#a855f7" },
+            rose:   { DEFAULT:"#f43f5e" },
+            gold:   { DEFAULT:"#fbbf24" },
+            green:  { neon:"#00ff88" },
+          },
+          animation: {
+            "fade-up":    "fadeUp 0.45s cubic-bezier(0.22,1,0.36,1) both",
+            "slide-in":   "slideIn 0.5s cubic-bezier(0.22,1,0.36,1) both",
+            "pop":        "pop 0.3s cubic-bezier(0.34,1.56,0.64,1) both",
+            "pulse-slow": "pulseSlow 3s ease-in-out infinite",
+            "shimmer":    "shimmer 4s linear infinite",
+            "bump-flash": "bumpFlash 0.6s ease both",
+          },
+          keyframes: {
+            fadeUp:    { "0%":{"opacity":"0","transform":"translateY(20px)"},  "100%":{"opacity":"1","transform":"translateY(0)"} },
+            slideIn:   { "0%":{"opacity":"0","transform":"translateX(-30px)"}, "100%":{"opacity":"1","transform":"translateX(0)"} },
+            pop:       { "0%":{"transform":"scale(0.85)","opacity":"0"},        "100%":{"transform":"scale(1)","opacity":"1"} },
+            pulseSlow: { "0%,100%":{"opacity":"0.6"},"50%":{"opacity":"1"} },
+            shimmer:   { "0%":{"background-position":"200% center"},            "100%":{"background-position":"-200% center"} },
+            bumpFlash: { "0%,100%":{"box-shadow":"0 0 0 rgba(0,255,136,0)"},    "50%":{"box-shadow":"0 0 40px rgba(0,255,136,0.5), 0 0 80px rgba(0,255,136,0.2)"} },
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html { direction: rtl; }
+    body {
+      font-family: "Heebo", sans-serif;
+      background-color: #07080d;
+      color: #e2e8f0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Noise */
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 0;
+    }
+    /* Grid */
+    body::after {
+      content: "";
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.022) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.022) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none; z-index: 0;
+    }
+
+    /* Glass */
+    .glass-card {
+      background: linear-gradient(135deg,rgba(255,255,255,0.055) 0%,rgba(255,255,255,0.018) 100%);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 4px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+
+    .neon-title {
+      background: linear-gradient(90deg,#00e5ff 0%,#a855f7 35%,#00e5ff 70%,#a855f7 100%);
+      background-size: 200% auto;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 4s linear infinite;
+    }
+    .glow-line {
+      height: 1px;
+      background: linear-gradient(90deg,transparent,#00e5ff 30%,#a855f7 70%,transparent);
+      box-shadow: 0 0 12px rgba(0,229,255,0.5),0 0 30px rgba(168,85,247,0.3);
+    }
+
+    /* ── Filter bar ─────────────────────────── */
+    .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+    .filter-chip {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04);
+      color: rgba(148,163,184,0.8);
+      font-size: 13px; font-weight: 600;
+      font-family: "Heebo", sans-serif;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.22,1,0.36,1);
+      white-space: nowrap;
+    }
+    .filter-chip:hover { background: rgba(255,255,255,0.09); color: #e2e8f0; }
+    .filter-chip.active {
+      background: rgba(0,229,255,0.12);
+      border-color: rgba(0,229,255,0.45);
+      color: #00e5ff;
+      box-shadow: 0 0 14px rgba(0,229,255,0.18);
+    }
+    .filter-chip.active-all {
+      background: rgba(168,85,247,0.12);
+      border-color: rgba(168,85,247,0.45);
+      color: #c084fc;
+      box-shadow: 0 0 14px rgba(168,85,247,0.2);
+    }
+
+    /* ── Input ──────────────────────────────── */
+    .input-field {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #e2e8f0;
+      transition: border-color .25s, box-shadow .25s, background .25s;
+      font-family: "Heebo", sans-serif;
+    }
+    .input-field::placeholder { color: rgba(148,163,184,0.5); }
+    .input-field:focus {
+      outline: none;
+      border-color: rgba(0,229,255,0.6);
+      box-shadow: 0 0 0 3px rgba(0,229,255,0.12),0 0 20px rgba(0,229,255,0.1);
+      background: rgba(0,229,255,0.04);
+    }
+    /* select arrow fix RTL */
+    select.input-field { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position: left 12px center; padding-left:32px; cursor:pointer; }
+    select.input-field option { background: #0e1018; }
+
+    /* ── Match toggle ───────────────────────── */
+    .match-btn {
+      flex: 1; padding: 10px 0;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04);
+      color: rgba(148,163,184,0.8);
+      font-family: "Heebo",sans-serif; font-size:15px; font-weight:600;
+      cursor:pointer; transition: all .25s cubic-bezier(0.22,1,0.36,1);
+    }
+    .match-btn:hover { background:rgba(255,255,255,0.08); color:#e2e8f0; }
+    .match-btn.active-ranked { background:rgba(251,191,36,0.12); border-color:rgba(251,191,36,0.5); color:#fbbf24; box-shadow:0 0 20px rgba(251,191,36,0.2); }
+    .match-btn.active-casual { background:rgba(0,229,255,0.1);   border-color:rgba(0,229,255,0.45); color:#00e5ff; box-shadow:0 0 20px rgba(0,229,255,0.18); }
+
+    /* ── Counter ────────────────────────────── */
+    .counter-btn {
+      width:40px;height:40px; border-radius:8px;
+      background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
+      color:#94a3b8; font-size:20px; cursor:pointer; transition:all .2s;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .counter-btn:hover { background:rgba(0,229,255,0.12); border-color:rgba(0,229,255,0.4); color:#00e5ff; }
+    .counter-btn:active { transform:scale(0.92); }
+
+    /* ── Playstyle tag buttons (form) ───────── */
+    .tag-btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04);
+      color: rgba(148,163,184,0.8);
+      font-family: "Heebo",sans-serif; font-size:13px; font-weight:600;
+      cursor: pointer; transition: all .2s;
+    }
+    .tag-btn:hover { background:rgba(255,255,255,0.09); color:#e2e8f0; }
+    .tag-btn.active-mic     { background:rgba(0,229,255,0.12);  border-color:rgba(0,229,255,0.4);  color:#00e5ff; }
+    .tag-btn.active-tryhard { background:rgba(244,63,94,0.12);  border-color:rgba(244,63,94,0.4);  color:#fb7185; }
+    .tag-btn.active-chill   { background:rgba(0,255,136,0.1);   border-color:rgba(0,255,136,0.35); color:#00ff88; }
+
+    /* ── Primary button ─────────────────────── */
+    .btn-primary {
+      background: linear-gradient(135deg,#00e5ff 0%,#a855f7 100%);
+      color:#07080d; font-weight:900;
+      font-family:"Heebo",sans-serif;
+      border:none; position:relative; overflow:hidden;
+      transition:transform .2s,box-shadow .2s;
+    }
+    .btn-primary::before {
+      content:""; position:absolute; inset:0;
+      background:linear-gradient(135deg,#a855f7 0%,#00e5ff 100%);
+      opacity:0; transition:opacity .3s;
+    }
+    .btn-primary:hover { transform:translateY(-2px); box-shadow:0 0 30px rgba(0,229,255,0.4),0 0 60px rgba(168,85,247,0.2); }
+    .btn-primary:hover::before { opacity:1; }
+    .btn-primary span { position:relative; z-index:1; }
+    .btn-primary:active { transform:translateY(0) scale(0.98); }
+
+    /* ── Header post button ─────────────────── */
+    .btn-post {
+      background:transparent; border:1px solid rgba(0,229,255,0.5); color:#00e5ff;
+      font-family:"Heebo",sans-serif; font-weight:700;
+      transition:all .25s; position:relative; overflow:hidden;
+    }
+    .btn-post::after { content:""; position:absolute; inset:0; background:rgba(0,229,255,0.08); opacity:0; transition:opacity .25s; }
+    .btn-post:hover { border-color:#00e5ff; box-shadow:0 0 20px rgba(0,229,255,0.3),inset 0 0 20px rgba(0,229,255,0.06); color:#fff; }
+    .btn-post:hover::after { opacity:1; }
+
+    /* ── LFG Card ───────────────────────────── */
+    .lfg-card {
+      position:relative; border-radius:16px; overflow:hidden;
+      transition:transform .3s cubic-bezier(0.22,1,0.36,1),box-shadow .3s;
+    }
+    .lfg-card.new-card { animation: slideIn 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+    .lfg-card.bump-anim { animation: bumpFlash 0.6s ease both; }
+    .lfg-card::before {
+      content:""; position:absolute; top:0;left:0;right:0; height:1px;
+      background:linear-gradient(90deg,transparent,rgba(0,229,255,0.4),rgba(168,85,247,0.4),transparent);
+      opacity:0; transition:opacity .3s;
+    }
+    .lfg-card:hover { transform:translateY(-4px) scale(1.01); box-shadow:0 8px 50px rgba(0,0,0,0.7),0 0 40px rgba(0,229,255,0.08); }
+    .lfg-card:hover::before { opacity:1; }
+
+    /* ── Badges ─────────────────────────────── */
+    .badge {
+      display:inline-flex; align-items:center; gap:5px;
+      padding:4px 10px; border-radius:6px;
+      font-size:12px; font-weight:600; letter-spacing:.02em;
+    }
+    .badge-ranked  { background:rgba(251,191,36,0.12); border:1px solid rgba(251,191,36,0.3); color:#fbbf24; }
+    .badge-casual  { background:rgba(0,229,255,0.1);   border:1px solid rgba(0,229,255,0.3);  color:#00e5ff; }
+    .badge-players { background:rgba(168,85,247,0.1);  border:1px solid rgba(168,85,247,0.3); color:#c084fc; }
+    .badge-rank-val{ background:rgba(251,191,36,0.08); border:1px solid rgba(251,191,36,0.2); color:#fde68a; font-size:11px; }
+    .badge-mic     { background:rgba(0,229,255,0.1);   border:1px solid rgba(0,229,255,0.25); color:#7dd3fc; font-size:11px; }
+    .badge-tryhard { background:rgba(244,63,94,0.1);   border:1px solid rgba(244,63,94,0.25); color:#fb7185; font-size:11px; }
+    .badge-chill   { background:rgba(0,255,136,0.08);  border:1px solid rgba(0,255,136,0.25); color:#00ff88; font-size:11px; }
+
+    /* ── Copy button ────────────────────────── */
+    .copy-btn {
+      padding:7px 12px; border-radius:8px;
+      background:rgba(88,101,242,0.15); border:1px solid rgba(88,101,242,0.3); color:#818cf8;
+      font-size:12px; font-weight:600; font-family:"Heebo",sans-serif;
+      cursor:pointer; transition:all .25s; display:flex; align-items:center; gap:5px; white-space:nowrap;
+    }
+    .copy-btn:hover { background:rgba(88,101,242,0.25); border-color:rgba(88,101,242,0.5); color:#a5b4fc; box-shadow:0 0 15px rgba(88,101,242,0.2); }
+    .copy-btn.copied { background:rgba(34,197,94,0.15); border-color:rgba(34,197,94,0.4); color:#4ade80; box-shadow:0 0 15px rgba(34,197,94,0.2); }
+
+    /* ── WhatsApp button ────────────────────── */
+    .wa-btn {
+      padding:7px 12px; border-radius:8px;
+      background:rgba(37,211,102,0.1); border:1px solid rgba(37,211,102,0.25); color:#25d366;
+      font-size:12px; font-weight:600; font-family:"Heebo",sans-serif;
+      cursor:pointer; transition:all .25s; display:flex; align-items:center; gap:5px; white-space:nowrap;
+      text-decoration:none;
+    }
+    .wa-btn:hover { background:rgba(37,211,102,0.2); border-color:rgba(37,211,102,0.5); box-shadow:0 0 15px rgba(37,211,102,0.2); }
+
+    /* ── Bump button ────────────────────────── */
+    .bump-btn {
+      padding:7px 12px; border-radius:8px;
+      background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.25); color:#00ff88;
+      font-size:12px; font-weight:700; font-family:"Heebo",sans-serif;
+      cursor:pointer; transition:all .25s; display:flex; align-items:center; gap:5px; white-space:nowrap;
+    }
+    .bump-btn:hover { background:rgba(0,255,136,0.18); border-color:rgba(0,255,136,0.5); box-shadow:0 0 18px rgba(0,255,136,0.25); }
+    .bump-btn:disabled { opacity:0.4; cursor:not-allowed; pointer-events:none; }
+
+    /* ── Modal ──────────────────────────────── */
+    .modal-overlay { background:rgba(0,0,0,0.78); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+
+    /* ── Rank reveal ────────────────────────── */
+    #rankWrapper { overflow:hidden; max-height:0; opacity:0; transition:max-height .35s cubic-bezier(0.22,1,0.36,1),opacity .3s,margin .3s; }
+    #rankWrapper.visible { max-height:80px; opacity:1; margin-top:16px; }
+
+    /* ── Other game reveal ──────────────────── */
+    #otherGameWrapper { overflow:hidden; max-height:0; opacity:0; transition:max-height .35s cubic-bezier(0.22,1,0.36,1),opacity .3s,margin .3s; }
+    #otherGameWrapper.visible { max-height:80px; opacity:1; margin-top:16px; }
+
+    /* ── Empty state ────────────────────────── */
+    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:80px 20px; color:rgba(148,163,184,0.5); animation:fadeUp .5s ease both; }
+
+    /* ── Scrollbar ──────────────────────────── */
+    ::-webkit-scrollbar { width:6px; }
+    ::-webkit-scrollbar-track { background:#07080d; }
+    ::-webkit-scrollbar-thumb { background:rgba(0,229,255,0.25); border-radius:3px; }
+    ::-webkit-scrollbar-thumb:hover { background:rgba(0,229,255,0.45); }
+
+    /* ── Toast ──────────────────────────────── */
+    #toastContainer { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:9999; display:flex; flex-direction:column; gap:10px; align-items:center; }
+    .toast { padding:12px 24px; border-radius:12px; font-size:14px; font-weight:600; animation:pop .3s cubic-bezier(0.34,1.56,0.64,1) both; box-shadow:0 4px 30px rgba(0,0,0,0.5); }
+    .toast-success { background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.4); color:#4ade80; }
+    .toast-error   { background:rgba(244,63,94,0.15);  border:1px solid rgba(244,63,94,0.4);  color:#fb7185; }
+    .toast-info    { background:rgba(0,229,255,0.1);    border:1px solid rgba(0,229,255,0.35); color:#7dd3fc; }
+
+    /* ── Live badge ─────────────────────────── */
+    .live-dot { width:8px;height:8px; border-radius:50%; background:#00ff88; display:inline-block; animation:pulseSlow 2s ease-in-out infinite; box-shadow:0 0 8px rgba(0,255,136,0.7); }
+
+    /* ── Stagger ────────────────────────────── */
+    .lfg-card:nth-child(1){animation-delay:.04s}
+    .lfg-card:nth-child(2){animation-delay:.08s}
+    .lfg-card:nth-child(3){animation-delay:.12s}
+    .lfg-card:nth-child(4){animation-delay:.16s}
+    .lfg-card:nth-child(5){animation-delay:.20s}
+    .lfg-card:nth-child(n+6){animation-delay:.24s}
+  </style>
+</head>
+
+<body class="relative z-10">
+
+  <!-- ═══════════════ HEADER ═══════════════ -->
+  <header class="relative z-20 pt-8 pb-4 px-4 sm:px-8">
+    <div class="max-w-5xl mx-auto">
+      <div class="flex items-center justify-between mb-6">
+        <!-- Logo -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl glass-card flex items-center justify-content-center text-xl shrink-0 flex items-center justify-center" style="box-shadow:0 0 20px rgba(0,229,255,0.2)">🎮</div>
+            <div class="flex items-center gap-2">
+              <h1 class="font-orbitron text-2xl sm:text-3xl font-black tracking-tight neon-title">PairUp</h1>
+              <span class="live-dot"></span>
+            </div>
+          </div>
+          <p class="text-slate-400 text-sm font-light mr-1">מצא קבוצה לגיימרים ישראלים</p>
+        </div>
+        <!-- CTA -->
+        <button onclick="openModal()" class="btn-post text-sm sm:text-base px-5 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          פרסם פוסט
+        </button>
+      </div>
+
+      <div class="glow-line"></div>
+
+      <!-- Stats row -->
+      <div class="flex items-center gap-6 mt-3 mb-4 text-xs text-slate-500">
+        <div class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse-slow"></span>
+          <span id="activeCount">0 פוסטים פעילים</span>
+        </div>
+        <div class="text-slate-700">•</div>
+        <div id="onlineCount" class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse-slow" style="background:#00e5ff"></span>
+          <span>מתחבר...</span>
+        </div>
+        <div class="text-slate-700">•</div>
+        <div>פוסטים נמחקים אוטומטית אחרי 2 שעות</div>
+      </div>
+
+      <!-- ── Filter bar ── -->
+      <div class="filter-bar pb-2" id="filterBar"></div>
+    </div>
+  </header>
+
+  <!-- ═══════════════ FEED ═══════════════ -->
+  <main class="relative z-10 px-4 sm:px-8 pb-20">
+    <div class="max-w-5xl mx-auto">
+      <div id="feed" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-2"></div>
+    </div>
+  </main>
+
+  <!-- ═══════════════ MODAL ═══════════════ -->
+  <div id="modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden" onclick="handleOverlayClick(event)">
+    <div class="modal-overlay absolute inset-0"></div>
+    <div class="glass-card relative w-full max-w-md rounded-2xl p-6 sm:p-8 z-10 animate-pop overflow-y-auto" style="max-height:92vh">
+
+      <div class="flex items-center justify-between mb-7">
+        <div>
+          <h2 class="text-xl font-bold text-white">פרסם פוסט</h2>
+          <p class="text-slate-400 text-sm mt-0.5">מלא את הפרטים ומצא חברים לגיים</p>
+        </div>
+        <button onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="space-y-5">
+
+        <!-- Game select -->
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-2">שם המשחק <span class="text-cyan-DEFAULT text-xs">*</span></label>
+          <select id="gameSelect" class="input-field w-full rounded-xl px-4 py-3 text-sm" onchange="onGameSelectChange()">
+            <option value="" disabled selected>בחר משחק...</option>
+            <option value="CS2">CS2</option>
+            <option value="Valorant">Valorant</option>
+            <option value="Fortnite">Fortnite</option>
+            <option value="League of Legends">League of Legends</option>
+            <option value="Apex Legends">Apex Legends</option>
+            <option value="Overwatch 2">Overwatch 2</option>
+            <option value="Rocket League">Rocket League</option>
+            <option value="PUBG">PUBG</option>
+            <option value="other">אחר...</option>
+          </select>
+          <!-- Other game text input -->
+          <div id="otherGameWrapper">
+            <input id="inputGameOther" type="text" placeholder="הכנס שם משחק..." maxlength="40"
+              class="input-field w-full rounded-xl px-4 py-3 text-sm" />
+          </div>
+        </div>
+
+        <!-- Match type -->
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-2">סוג משחק</label>
+          <div class="flex gap-2">
+            <button class="match-btn active-ranked" id="btnRanked" onclick="setMatchType('ranked')">🏆 ראנק</button>
+            <button class="match-btn" id="btnCasual" onclick="setMatchType('casual')">🎲 רגיל</button>
+          </div>
+        </div>
+
+        <!-- Rank (conditional) -->
+        <div id="rankWrapper">
+          <label class="block text-sm font-semibold text-slate-300 mb-2">דרגה שלך</label>
+          <input id="inputRank" type="text" placeholder="למשל: Diamond 2, Platinum..." maxlength="30"
+            class="input-field w-full rounded-xl px-4 py-3 text-sm" />
+        </div>
+
+        <!-- Players needed -->
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-2">מספר שחקנים דרוש</label>
+          <div class="flex items-center gap-3">
+            <button class="counter-btn" onclick="changeCounter(-1)">−</button>
+            <div class="flex-1 text-center">
+              <span id="counterDisplay" class="text-2xl font-bold text-white">1</span>
+              <span class="text-slate-400 text-sm mr-1">שחקנ/ית</span>
+            </div>
+            <button class="counter-btn" onclick="changeCounter(1)">+</button>
+          </div>
+        </div>
+
+        <!-- Playstyle tags -->
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-2">סגנון משחק</label>
+          <div class="flex gap-2 flex-wrap">
+            <button class="tag-btn" id="tag-mic"     onclick="toggleTag('mic')">🎙️ חובה מיקרופון</button>
+            <button class="tag-btn" id="tag-tryhard" onclick="toggleTag('tryhard')">🔥 TryHard</button>
+            <button class="tag-btn" id="tag-chill"   onclick="toggleTag('chill')">😎 Chill</button>
+          </div>
+        </div>
+
+        <!-- Discord -->
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-2 flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="text-indigo-400">
+              <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/>
+            </svg>
+            שם ב-Discord <span class="text-cyan-DEFAULT text-xs">*</span>
+          </label>
+          <input id="inputDiscord" type="text" placeholder="username#0000 או username" maxlength="50"
+            class="input-field w-full rounded-xl px-4 py-3 text-sm" />
+        </div>
+
+        <!-- Submit -->
+        <button onclick="submitPost()" class="btn-primary w-full py-3.5 rounded-xl text-base cursor-pointer mt-2">
+          <span>🚀 פרסם עכשיו</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TOASTS ═══════════════ -->
+  <div id="toastContainer"></div>
+
+  <!-- Socket.io client -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+  // ════════════════════════════════════════════════════
+  //  CONFIG
+  // ════════════════════════════════════════════════════
+  const API_BASE   = window.location.origin;
+  const SHARE_URL  = "https://pairup-il.com";
+  const GAMES      = ["CS2","Valorant","Fortnite","League of Legends","Apex Legends","Overwatch 2","Rocket League","PUBG"];
+
+  // ════════════════════════════════════════════════════
+  //  STATE
+  // ════════════════════════════════════════════════════
+  let allPosts     = [];
+  let activeFilter = "all";   // "all" | game name | "other"
+  let matchType    = "ranked";
+  let playerCount  = 1;
+  let activeTags   = new Set();
+
+  // My post IDs (owned by this browser session)
+  function getMyPosts()    { try { return JSON.parse(localStorage.getItem("pairup_my_posts") || "[]"); } catch { return []; } }
+  function saveMyPost(id)  { const a = getMyPosts(); a.push(id); localStorage.setItem("pairup_my_posts", JSON.stringify(a)); }
+  function isMyPost(id)    { return getMyPosts().includes(id); }
+
+  // ════════════════════════════════════════════════════
+  //  SOCKET.IO
+  // ════════════════════════════════════════════════════
+  const socket = io();
+
+  socket.on("connect", () => {
+    document.getElementById("onlineCount").innerHTML =
+      `<span class="w-2 h-2 rounded-full animate-pulse-slow" style="background:#00e5ff;display:inline-block;border-radius:50%;box-shadow:0 0 6px #00e5ff"></span><span>מחובר בזמן אמת</span>`;
+  });
+  socket.on("disconnect", () => {
+    document.getElementById("onlineCount").innerHTML =
+      `<span class="w-2 h-2 rounded-full bg-red-500" style="display:inline-block;border-radius:50%"></span><span>מנותק</span>`;
+  });
+
+  // New post broadcast (fires for all clients including the poster)
+  socket.on("post:new", (post) => {
+    if (allPosts.find(p => p.id === post.id)) return; // already have it (shouldn't happen now)
+    allPosts.unshift(post);
+    updateActiveCount();
+    prependCard(post);
+    if (!isMyPost(post.id)) showToast("פוסט חדש התווסף לפיד! 🎮", "info");
+  });
+
+  // Bumped post
+  socket.on("post:bumped", (post) => {
+    const idx = allPosts.findIndex(p => p.id === post.id);
+    if (idx !== -1) { allPosts.splice(idx, 1); }
+    allPosts.unshift(post);
+    renderFeed(filteredPosts());
+    // flash the card
+    const el = document.getElementById(`card-${post.id}`);
+    if (el) { el.classList.add("bump-anim"); setTimeout(() => el.classList.remove("bump-anim"), 700); }
+  });
+
+  // Full refresh (cleanup)
+  socket.on("feed:refresh", (posts) => {
+    allPosts = posts;
+    renderFeed(filteredPosts());
+    updateActiveCount();
+  });
+
+  // Deleted
+  socket.on("post:deleted", (id) => {
+    allPosts = allPosts.filter(p => p.id !== id);
+    const el = document.getElementById(`card-${id}`);
+    if (el) { el.style.transition="opacity .4s,transform .4s"; el.style.opacity="0"; el.style.transform="scale(0.95)"; setTimeout(()=>el.remove(),400); }
+    updateActiveCount();
+  });
+
+  // ════════════════════════════════════════════════════
+  //  FILTER BAR
+  // ════════════════════════════════════════════════════
+  function buildFilterBar() {
+    const bar    = document.getElementById("filterBar");
+    const chips  = [{ label:"🎮 כולם", value:"all" }, ...GAMES.map(g => ({ label:g, value:g })), { label:"אחר", value:"other" }];
+    bar.innerHTML = chips.map(c => `
+      <button class="filter-chip ${c.value==="all"?"active-all active":""}"
+              id="chip-${c.value.replace(/\s/g,"_")}"
+              onclick="setFilter('${escAttr(c.value)}')">
+        ${escHtml(c.label)}
+      </button>`).join("");
+  }
+
+  function setFilter(val) {
+    activeFilter = val;
+    // update chip styles
+    document.querySelectorAll(".filter-chip").forEach(el => {
+      el.classList.remove("active","active-all");
+    });
+    const key = val.replace(/\s/g,"_");
+    const el  = document.getElementById(`chip-${key}`);
+    if (el) el.classList.add(val==="all" ? "active-all" : "active", "active");
+    renderFeed(filteredPosts());
+  }
+
+  function filteredPosts() {
+    if (activeFilter === "all") return allPosts;
+    if (activeFilter === "other") return allPosts.filter(p => !GAMES.includes(p.game));
+    return allPosts.filter(p => p.game === activeFilter);
+  }
+
+  // ════════════════════════════════════════════════════
+  //  MODAL
+  // ════════════════════════════════════════════════════
+  function openModal() {
+    document.getElementById("modal").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+    // reset
+    document.getElementById("gameSelect").value       = "";
+    document.getElementById("inputGameOther").value   = "";
+    document.getElementById("inputRank").value        = "";
+    document.getElementById("inputDiscord").value     = "";
+    document.getElementById("otherGameWrapper").classList.remove("visible");
+    playerCount = 1;
+    document.getElementById("counterDisplay").textContent = "1";
+    activeTags.clear();
+    ["mic","tryhard","chill"].forEach(t => {
+      document.getElementById(`tag-${t}`).className = "tag-btn";
+    });
+    setMatchType("ranked");
+  }
+  function closeModal() {
+    document.getElementById("modal").classList.add("hidden");
+    document.body.style.overflow = "";
+  }
+  function handleOverlayClick(e) {
+    if (e.target === document.getElementById("modal")) closeModal();
+  }
+  document.addEventListener("keydown", e => { if (e.key==="Escape") closeModal(); });
+
+  // ════════════════════════════════════════════════════
+  //  FORM LOGIC
+  // ════════════════════════════════════════════════════
+  function onGameSelectChange() {
+    const val = document.getElementById("gameSelect").value;
+    document.getElementById("otherGameWrapper").classList.toggle("visible", val==="other");
+    if (val==="other") setTimeout(()=>document.getElementById("inputGameOther").focus(),50);
+  }
+
+  function setMatchType(type) {
+    matchType = type;
+    document.getElementById("btnRanked").className = "match-btn" + (type==="ranked"?" active-ranked":"");
+    document.getElementById("btnCasual").className = "match-btn" + (type==="casual"?" active-casual":"");
+    document.getElementById("rankWrapper").classList.toggle("visible", type==="ranked");
+  }
+  document.getElementById("rankWrapper").classList.add("visible");
+
+  function changeCounter(d) {
+    playerCount = Math.min(9, Math.max(1, playerCount+d));
+    document.getElementById("counterDisplay").textContent = playerCount;
+  }
+
+  function toggleTag(tag) {
+    const btn = document.getElementById(`tag-${tag}`);
+    if (activeTags.has(tag)) {
+      activeTags.delete(tag);
+      btn.className = "tag-btn";
+    } else {
+      activeTags.add(tag);
+      btn.className = `tag-btn active-${tag}`;
+    }
+  }
+
+  // ════════════════════════════════════════════════════
+  //  SUBMIT
+  // ════════════════════════════════════════════════════
+  async function submitPost() {
+    const selectVal = document.getElementById("gameSelect").value;
+    const game = selectVal==="other"
+      ? document.getElementById("inputGameOther").value.trim()
+      : selectVal;
+    const rank    = document.getElementById("inputRank").value.trim();
+    const discord = document.getElementById("inputDiscord").value.trim();
+
+    if (!game)    { showToast("אנא בחר / הכנס שם משחק","error"); return; }
+    if (!discord) { showToast("אנא הכנס שם דיסקורד","error"); return; }
+    if (matchType==="ranked" && !rank) { showToast("אנא הכנס את הדרגה שלך","error"); return; }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/posts`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ game, matchType, rank, playersNeeded:playerCount, discord, tags:[...activeTags] })
+      });
+      if (!res.ok) throw new Error();
+      const post = await res.json();
+      saveMyPost(post.id);         // mark as mine in localStorage
+      closeModal();
+      showToast("הפוסט פורסם בהצלחה! 🎮","success");
+      // socket's post:new event will handle adding the card for all clients including self
+    } catch {
+      showToast("שגיאה בפרסום. בדוק שהשרת רץ.","error");
+    }
+  }
+
+  // ════════════════════════════════════════════════════
+  //  LOAD & RENDER
+  // ════════════════════════════════════════════════════
+  async function loadPosts() {
+    try {
+      const res = await fetch(`${API_BASE}/api/posts`);
+      allPosts  = await res.json();
+      renderFeed(filteredPosts());
+      updateActiveCount();
+    } catch { renderFeed([]); }
+  }
+
+  function updateActiveCount() {
+    document.getElementById("activeCount").textContent = `${allPosts.length} פוסטים פעילים`;
+  }
+
+  function renderFeed(posts) {
+    const feed = document.getElementById("feed");
+    if (posts.length===0) {
+      feed.innerHTML = `
+        <div class="col-span-full empty-state">
+          <div class="text-6xl">🕹️</div>
+          <p class="text-lg font-semibold text-slate-400">${activeFilter==="all"?"אין פוסטים פעילים כרגע":"אין פוסטים לסינון הזה"}</p>
+          <p class="text-sm text-slate-600">היה הראשון! לחץ על "פרסם פוסט" למעלה</p>
+        </div>`;
+      return;
+    }
+    feed.innerHTML = posts.map((p,i) => buildCard(p,i)).join("");
+  }
+
+  // Prepend a single new card with slide-in animation
+  function prependCard(post) {
+    // Only if it passes current filter
+    const passes = activeFilter==="all" || post.game===activeFilter || (activeFilter==="other" && !GAMES.includes(post.game));
+    if (!passes) return;
+
+    const feed = document.getElementById("feed");
+    // Remove empty state if present
+    const empty = feed.querySelector(".empty-state");
+    if (empty) empty.closest(".col-span-full")?.remove();
+    if (feed.querySelector(".empty-state")) feed.innerHTML = "";
+
+    const tmp = document.createElement("div");
+    tmp.innerHTML = buildCard(post, 0, true);
+    const cardEl = tmp.firstElementChild;
+    cardEl.classList.add("new-card");
+    feed.prepend(cardEl);
+  }
+
+  function buildCard(p, idx, isNew=false) {
+    const ago      = timeAgo(p.bumpedAt || p.createdAt);
+    const isRanked = p.matchType==="ranked";
+    const stripe   = isRanked
+      ? "background:linear-gradient(180deg,#fbbf24,#f59e0b)"
+      : "background:linear-gradient(180deg,#00e5ff,#0ea5e9)";
+    const mine = isMyPost(p.id);
+
+    // Tag badges
+    const tagBadges = (p.tags||[]).map(t => {
+      const map = { mic:"🎙️ מיקרופון", tryhard:"🔥 TryHard", chill:"😎 Chill" };
+      return `<span class="badge badge-${t}">${map[t]||t}</span>`;
+    }).join("");
+
+    const rankBadge = (isRanked&&p.rank) ? `<span class="badge badge-rank-val">🏅 ${escHtml(p.rank)}</span>` : "";
+
+    // WhatsApp link
+    const waText = encodeURIComponent(`חסר לנו שחקן! כנסו להעתיק את הדיסקורד שלי: ${SHARE_URL}`);
+    const waHref = `https://wa.me/?text=${waText}`;
+
+    // Bump button (only for post owner)
+    const bumpBtn = mine ? `
+      <button class="bump-btn" id="bump-${p.id}" onclick="bumpPost('${p.id}')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="17 11 12 6 7 11"/><line x1="12" y1="6" x2="12" y2="18"/></svg>
+        הקפץ
+      </button>` : "";
+
+    return `
+      <div class="lfg-card glass-card p-5 cursor-default" id="card-${p.id}" style="animation-delay:${idx*0.06}s">
+        <div style="${stripe};opacity:0.7;position:absolute;top:0;bottom:0;right:0;width:3px;border-radius:0 16px 16px 0;right:auto;left:0;"></div>
+
+        <!-- Top row: game + time -->
+        <div class="flex items-start justify-between mb-3 mr-2">
+          <div class="flex items-center gap-2 min-w-0">
+            ${mine ? '<span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.3);color:#00ff88;white-space:nowrap">הפוסט שלי</span>' : ""}
+            <h3 class="font-bold text-white text-lg leading-tight truncate">${escHtml(p.game)}</h3>
+          </div>
+          <span class="text-slate-500 text-xs shrink-0 mr-2 mt-1 whitespace-nowrap">${ago}</span>
+        </div>
+
+        <!-- Badges -->
+        <div class="flex flex-wrap gap-2 mb-3 mr-2">
+          <span class="badge ${isRanked?"badge-ranked":"badge-casual"}">${isRanked?"🏆 ראנק":"🎲 רגיל"}</span>
+          ${rankBadge}
+          <span class="badge badge-players">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            מחפש ${p.playersNeeded}
+          </span>
+          ${tagBadges}
+        </div>
+
+        <!-- Divider -->
+        <div class="h-px bg-white/5 mb-3 mx-2"></div>
+
+        <!-- Discord row -->
+        <div class="flex items-center justify-between gap-2 mr-2 mb-3">
+          <div class="flex items-center gap-2 min-w-0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="text-indigo-400 shrink-0"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/></svg>
+            <span class="text-slate-300 text-sm font-medium truncate">${escHtml(p.discord)}</span>
+          </div>
+          <button class="copy-btn shrink-0" id="copy-${p.id}" onclick="copyDiscord('${escAttr(p.discord)}','${p.id}')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            העתק
+          </button>
+        </div>
+
+        <!-- Action row: WhatsApp + Bump -->
+        <div class="flex items-center gap-2 mr-2 flex-wrap">
+          <a href="${waHref}" target="_blank" rel="noopener" class="wa-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+            שתף בWhatsApp
+          </a>
+          ${bumpBtn}
+        </div>
+      </div>`;
+  }
+
+  // ════════════════════════════════════════════════════
+  //  BUMP
+  // ════════════════════════════════════════════════════
+  async function bumpPost(id) {
+    const btn = document.getElementById(`bump-${id}`);
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch(`${API_BASE}/api/posts/${id}/bump`, { method:"POST" });
+      if (res.status===429) {
+        const data = await res.json();
+        const mins = Math.ceil(data.secsLeft/60);
+        showToast(`תוכל להקפיץ שוב בעוד ${mins} דקות ⏳`, "error");
+        if (btn) btn.disabled = false;
+        return;
+      }
+      if (!res.ok) throw new Error();
+      showToast("הפוסט הוקפץ לראש הפיד! ⬆️", "success");
+      // socket will handle re-render for all clients including self
+    } catch {
+      showToast("שגיאה בהקפצה", "error");
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // ════════════════════════════════════════════════════
+  //  COPY DISCORD
+  // ════════════════════════════════════════════════════
+  function copyDiscord(text, id) {
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById(`copy-${id}`);
+      if (!btn) return;
+      btn.classList.add("copied");
+      btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>הועתק!`;
+      setTimeout(() => {
+        btn.classList.remove("copied");
+        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>העתק`;
+      }, 2200);
+    }).catch(() => showToast("לא ניתן להעתיק","error"));
+  }
+
+  // ════════════════════════════════════════════════════
+  //  TOAST
+  // ════════════════════════════════════════════════════
+  function showToast(msg, type="success") {
+    const c = document.getElementById("toastContainer");
+    const t = document.createElement("div");
+    t.className = `toast toast-${type}`;
+    t.textContent = msg;
+    c.appendChild(t);
+    setTimeout(() => {
+      t.style.transition = "opacity .4s,transform .4s";
+      t.style.opacity    = "0";
+      t.style.transform  = "translateY(10px)";
+      setTimeout(() => t.remove(), 400);
+    }, 2800);
+  }
+
+  // ════════════════════════════════════════════════════
+  //  HELPERS
+  // ════════════════════════════════════════════════════
+  function timeAgo(ts) {
+    const diff  = Date.now() - ts;
+    const mins  = Math.floor(diff/60000);
+    const hours = Math.floor(diff/3600000);
+    if (mins  < 1)  return "זה עתה";
+    if (mins  < 60) return `לפני ${mins} דקות`;
+    if (hours < 2)  return "לפני שעה";
+    return `לפני ${hours} שעות`;
+  }
+  function escHtml(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+  function escAttr(s) { return escHtml(s).replace(/'/g,"&#39;"); }
+
+  // ════════════════════════════════════════════════════
+  //  INIT
+  // ════════════════════════════════════════════════════
+  buildFilterBar();
+  loadPosts();
+  // Refresh timestamps every minute
+  setInterval(() => renderFeed(filteredPosts()), 60_000);
+  </script>
+</body>
+</html>
